@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "strict": false,
+        "plugins": [
+            {
+                "name": "my-plugin"
+            }
+        ],
+        "noEmit": true,
+        "incremental": true,
+        "tsBuildInfoFile": ".tsbuildinfo"
+    },
+    "files": [
+        "main.ts"
+    ]
+}

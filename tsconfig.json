@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "strict": true,
+        "outDir": "./out",
+        "esModuleInterop": true,
+        "sourceMap": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "module": "CommonJS",
+        "target": "ES2017"
+    },
+    "include": [
+        "src/**/*.ts"
+    ]
+}

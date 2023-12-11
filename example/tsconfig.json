@@ -8,9 +8,8 @@
         ],
         "noEmit": true,
         "incremental": true,
-        "tsBuildInfoFile": ".tsbuildinfo"
+        "tsBuildInfoFile": ".tsbuildinfo",
+        "lib": ["ES2015", "DOM"]
     },
-    "files": [
-        "main.ts"
-    ]
+    "files": ["main.ts"]
 }

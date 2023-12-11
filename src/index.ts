@@ -1,4 +1,4 @@
-import * as ts from 'typescript/lib/tsserverlibrary';
+import * as ts from "typescript/lib/tsserverlibrary";
 
 const init: ts.server.PluginModuleFactory = (mod) => {
     const ts = mod.typescript;
@@ -9,67 +9,100 @@ const init: ts.server.PluginModuleFactory = (mod) => {
         const log = info.project.projectService.logger;
 
         const proxy = createProxy(info.languageService);
-        let program: null | {
+        let state: null | {
             program: ts.SemanticDiagnosticsBuilderProgram;
             host: ts.CompilerHost;
             rootNames: string[];
             options: ts.CompilerOptions;
+            originalOptions: ts.CompilerOptions;
         } = null;
 
         proxy.getSemanticDiagnostics = (filePath) => {
             log.info(`Getting semantics for file ${filePath}`);
 
-            if (!program) {
-                log.info("Creating initial program");
+            const currentProgram = logPerformance("getProgram", info.languageService.getProgram);
 
-                // Fallback to language server if program is null?
-                const origProg = info.languageService.getProgram()!;
-
-                // Deep copies?
-                const rootFiles = [...origProg.getRootFileNames()];
-                const options = { ...origProg.getCompilerOptions(), strict: true };
-                const compilerHost: ts.CompilerHost = {
-                    ...ts.createCompilerHost(options),
-                    getSourceFile,
-                    getSourceFileByPath: (fileName, filePath, ...args) => getSourceFile(fileName, ...args)
-                };
-
-                program = {
-                    program: createProgram(rootFiles, options, compilerHost),
-                    host: compilerHost,
-                    rootNames: rootFiles,
-                    options: options
-                }
-            } else {
-                // Always recreate the program?
-                program = {
-                    ...program,
-                    program: createProgram(program.rootNames, program.options, program.host, program.program)
-                }
+            if (!currentProgram) {
+                log.info("currentProgram is null, falling back to language serivce");
+                return info.languageService.getSemanticDiagnostics(filePath);
             }
 
-            const diags = program.program.getSemanticDiagnostics(getSourceFile(filePath));
+            const rootFiles = [...logPerformance("getRootFileNames", currentProgram.getRootFileNames)];
+            const currentOptions = logPerformance("getCompilerOptions", currentProgram.getCompilerOptions);
+            const options: ts.CompilerOptions = { ...currentOptions, strict: true };
+            const compilerHost: ts.CompilerHost = {
+                ...logPerformance("createCompilerHost", () => ts.createCompilerHost(options)),
+                getSourceFile,
+                getSourceFileByPath: (fileName, filePath, ...args) => getSourceFile(fileName, ...args),
+            };
 
-            // Unnecessary copy?
-            return [...diags];
+            if (state === null) {
+                const program = logPerformance("initial createProgram", () =>
+                    createProgram(rootFiles, options, compilerHost),
+                );
+
+                state = {
+                    program,
+                    host: compilerHost,
+                    rootNames: rootFiles,
+                    options: options,
+                    originalOptions: currentOptions,
+                };
+            } else {
+                if (state.originalOptions !== currentOptions) {
+                    log.info("Options has changed.");
+                }
+
+                const program = logPerformance("incremental createProgram", () =>
+                    createProgram(state!.rootNames, state!.options, state!.host, state!.program),
+                );
+
+                state = {
+                    ...state,
+                    program,
+                };
+            }
+
+            const strictDiags = logPerformance("strict getSemanticDiagnostics", () =>
+                state!.program.getSemanticDiagnostics(getSourceFile(filePath)),
+            );
+            const diags = logPerformance("non-strict getSemanticDiagnostics", () =>
+                info.languageService.getSemanticDiagnostics(filePath),
+            );
+
+            return strictDiags as ts.Diagnostic[];
         };
 
         return proxy;
 
-        function getSourceFile(fileName: string, languageVersionOrOptions?: ts.ScriptTarget | ts.CreateSourceFileOptions, onError?: (message: string) => void, shouldCreateNewSourceFile?: boolean): ts.SourceFile | undefined {
+        function getSourceFile(
+            fileName: string,
+            languageVersionOrOptions?: ts.ScriptTarget | ts.CreateSourceFileOptions,
+            onError?: (message: string) => void,
+            shouldCreateNewSourceFile?: boolean,
+        ): ts.SourceFile | undefined {
             // Does filePath need to be rooted and canonicalized??
-            const path = (program?.host.getCanonicalFileName(fileName) ?? fileName) as ts.Path;
+            const path = (state?.host.getCanonicalFileName(fileName) ?? fileName) as ts.Path;
 
             // Should the server project always be used for all files?
             const sourceFile = info.project.getSourceFile(path);
             return sourceFile;
         }
+
+        function logPerformance<T>(title: string, action: () => T) {
+            const start = process.hrtime();
+            const result = action();
+            const end = process.hrtime(start);
+            const timeSpentMs = end[1] / 1000000;
+            log.info(`Finished '${title}', took: ${timeSpentMs}ms`);
+            return result;
+        }
     }
 
     return {
-        create
+        create,
     };
-}
+};
 
 function createProxy<T extends object>(obj: T) {
     const proxy: ts.LanguageService = Object.create(null);

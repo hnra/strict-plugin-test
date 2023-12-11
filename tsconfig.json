@@ -9,7 +9,5 @@
         "module": "CommonJS",
         "target": "ES2017"
     },
-    "include": [
-        "src/**/*.ts"
-    ]
+    "include": ["src/**/*.ts"]
 }
